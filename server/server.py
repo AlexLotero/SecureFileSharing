@@ -17,24 +17,32 @@ from datetime import date
 PORT = 8085 #random.randint(1000, 1200)
 FILE_LOCATION = "server/files/"
 valid = [False]
+# response_dict = {1: 'r',
+#                  2: 'sd',
+#                  3: 'cb',
+#                  4: 'cl'}
+
 # FILE_ALREADY_EXISTS = {1: replace_file,2: save_different_name, 3: combine_files, 4: keep_existing}
 
 # function to test whether the requested file exists on the server - repurposed from fencrypt
-def file_exists(file, type):
+def file_exists(file):#, type):
      return os.path.exists(file)
 
 def duplicate_file(connection_socket):
-     connection_socket.send('''The file you are attampting to upload already exists on the server.
+     connection_socket.send('''\n
+                            The file you are attampting to upload already exists on the server.
                             Please type and submit:
-                            'r' to replace the existing file with the new one,
-                            'sd' to save this new file under a different name,
-                            'cb' to append the new file onto the end of the existing one, or
-                            'cl' to keep the existing file and not upload the new one''')
+                            1 to replace the existing file with the new one,
+                            2 to save this new file under a different name,
+                            3 to append the new file onto the end of the existing one, or
+                            4 to keep the existing file and not upload the new one
+                            \n'''.encode('utf-8'))
      response = connection_socket.recv(4096)
      response = response.split()
      response = [field.decode('utf-8') for field in response]
-     response_command = response[0]
-     return response_command
+     response_command = int(response[0])
+    #  response_new_name = response[1]
+     return response_command #, response_new_name
 
 def save_file(file_name, new_data):
     with open(file_name, "w") as f:
@@ -68,9 +76,9 @@ def keep_existing():
 
 # Wrapper function to set valid[0] = True when any function is called
 def wrap_with_valid(operation_function):
-    def wrapper():
+    def wrapper(*args, **kwargs):
         valid[0] = True  # Set valid[0] to True
-        return operation_function()    # Call the original function
+        return operation_function(*args, **kwargs)    # Call the original function
     return wrapper
 
 def invalid_case():
@@ -96,30 +104,39 @@ def send_file(connection_socket, file_name):
 
 def connection_handler(connection_socket, addr):
     print("On port %s", PORT)
+
+    # *INTEGRATE LOGIN CODE BEFORE SENDING/RECEIVING FILES*
+
     try:
             message = connection_socket.recv(4096)               # found in Python "socket" documentation, "the value of bufsize should be a relatively small power of 2, for example, 4096"
             message = message.split()
             message = [field.decode('utf-8') for field in message]
             filename = FILE_LOCATION + message[1]
-            file_contents = ' '.join(message[2:])
+            file_contents = "\n" + ' '.join(message[2:]) + "\n"
             request_type = message[0]
 
             # Pull code from fencrypt to check if the requested file exists
             file_already = file_exists(filename)
 
+
             if file_already and request_type == "PUT":
                 to_do = duplicate_file(connection_socket)
-                FILE_ALREADY_EXISTS.get(to_do, invalid_case)(filename) 
-                 # FIGURE OUT HOW TO HANDLE EACH SCENARIO IN THE CASE OF A DUPLICATE FILE UPLOAD
+                # FIGURE OUT HOW TO HANDLE EACH SCENARIO IN THE CASE OF A DUPLICATE FILE UPLOAD
+                FILE_ALREADY_EXISTS.get(to_do, invalid_case)(filename, file_contents) 
+                return False
+            
+            if request_type == "TERM" and admin:
+                 connection_socket.close()
+                 return True
+
+            elif request_type == "PUT" and not file_already:
+                save_file(filename, file_contents)
                 return False
 
             elif request_type == "GET":
                 send_file(connection_socket, filename)
                 return False
 
-            elif request_type == "TERM" and admin:
-                 connection_socket.close()
-                 return True
             # else:
             #      connection_socket.close()
             #      return False

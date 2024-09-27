@@ -1,1 +1,4 @@
 This is example text, within the example.txt file.
+This is the second example text. Found in the client's file system.
+Example text number three.This should be the fourth example text to be included.
+Example text four.
