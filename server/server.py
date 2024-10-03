@@ -13,10 +13,14 @@ import os
 import secrets
 import random
 from datetime import date
+import threading
 
-PORT = 8085 #random.randint(1000, 1200)
+PORT = 8084 #random.randint(1000, 1200)
 FILE_LOCATION = "server/files/"
 valid = [False]
+
+SHUTOFF = False
+
 # response_dict = {1: 'r',
 #                  2: 'sd',
 #                  3: 'cb',
@@ -102,75 +106,61 @@ def send_file(connection_socket, file_name):
             connection_socket.sendall(chunk) # Send the chunk
     print(f"File '{file_name}' sent successfully.")
 
-def connection_handler(connection_socket, addr):
+def connection_handler(connection_socket, addr, e_admin_shutoff):
     print("On port %s", PORT)
 
     # *INTEGRATE LOGIN CODE BEFORE SENDING/RECEIVING FILES*
 
-    try:
-            message = connection_socket.recv(4096)               # found in Python "socket" documentation, "the value of bufsize should be a relatively small power of 2, for example, 4096"
-            message = message.split()
-            message = [field.decode('utf-8') for field in message]
-            filename = FILE_LOCATION + message[1]
-            file_contents = "\n" + ' '.join(message[2:]) + "\n"
-            request_type = message[0]
+    # try:
+    while True:
+        message = connection_socket.recv(4096)               # found in Python "socket" documentation, "the value of bufsize should be a relatively small power of 2, for example, 4096"
+        
+        if not message:
+            break
+        
+        message = message.split()
+        message = [field.decode('utf-8') for field in message]
+        filename = FILE_LOCATION + message[1]
+        file_contents = "\n" + ' '.join(message[2:]) + "\n"
+        request_type = message[0]
 
-            # Pull code from fencrypt to check if the requested file exists
-            file_already = file_exists(filename)
+        # Pull code from fencrypt to check if the requested file exists
+        file_already = file_exists(filename)
 
+        if request_type == "SHUTOFF":
+            e_admin_shutoff.set()
+            SHUTOFF = True
+            break 
+        
+        if file_already and request_type == "PUT":
+            to_do = duplicate_file(connection_socket)
+            # FIGURE OUT HOW TO HANDLE EACH SCENARIO IN THE CASE OF A DUPLICATE FILE UPLOAD
+            FILE_ALREADY_EXISTS.get(to_do, invalid_case)(filename, file_contents) 
+            # break
 
-            if file_already and request_type == "PUT":
-                to_do = duplicate_file(connection_socket)
-                # FIGURE OUT HOW TO HANDLE EACH SCENARIO IN THE CASE OF A DUPLICATE FILE UPLOAD
-                FILE_ALREADY_EXISTS.get(to_do, invalid_case)(filename, file_contents) 
-                return False
-            
-            if request_type == "TERM" and admin:
-                 connection_socket.close()
-                 return True
+        elif request_type == "PUT" and not file_already:
+            save_file(filename, file_contents)
+            # break
 
-            elif request_type == "PUT" and not file_already:
-                save_file(filename, file_contents)
-                return False
+        elif request_type == "GET":
+            send_file(connection_socket, filename)
+            # break
+        
+        elif request_type == "END":
+            break
+        
+        # elif request_type == "SHUTOFF": #and admin:
+        #     e_admin_shutoff.set()
+        #     SHUTOFF = True
+        #     break
 
-            elif request_type == "GET":
-                send_file(connection_socket, filename)
-                return False
-
-            # else:
-            #      connection_socket.close()
-            #      return False
-            
-            f = open(filename[1:])
-            outputdata = f.read()                               # stack overflow: read a text file into a string variable
-
-            #Send one HTTP header line into socket
-            #Fill in start
-            httpOK = "HTTP/1.1 200 OK\r\n"                       # taken from Wireshark lab (http4.pcapng), GET response output
-            connection_socket.send(httpOK.encode('utf-8'))        # to alleviate TypeError: a bytes-like object is required, not 'str'
-            #Fill in end
-
-            #Send the content of the requested file to the client
-            # for i in range(0, len(outputdata)):
-            #     connectionSocket.send(outputdata[i].encode())
-            connection_socket.send(outputdata.encode())
-            connection_socket.send("\r\n".encode())
-            connection_socket.close()
-    except IOError:
-        #Send response message for file not found (404)
         #Fill in start
-        http_not_found = "HTTP/1.1 404 Not Found\r\n"         # taken from Wireshark lab (http4.pcapng), GET response output
-        connection_socket.send(http_not_found.encode('utf-8')) # to alleviate TypeError: a bytes-like object is required, not 'str'
+    connection_socket.close()                            # found in Python "socket" documentation
         #Fill in end
-
-        #Close client socket
-        #Fill in start
-        connection_socket.close()                            # found in Python "socket" documentation
-        #Fill in end
-    return
+    return #e_admin_shutoff
 
 def web_server(port):
-    e_admin_shutoff = False
+    e_admin_shutoff = threading.Event()
     
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=100)
 
@@ -181,18 +171,19 @@ def web_server(port):
     serverSocket.listen(1)
     print("Server listening...")
 
-    while not e_admin_shutoff:
+    while not SHUTOFF:#e_admin_shutoff.is_set():
         #Establish the connection
         print('Ready to serve...')
         connection_socket, client_addr = serverSocket.accept()
         print("connection initiated  with: %s", client_addr)
-
-        e_admin_shutoff = pool.submit(connection_handler(connection_socket, client_addr))
+        
+        pool.submit(connection_handler, connection_socket, client_addr, e_admin_shutoff)
+        # e_admin_shutoff = pool.submit(connection_handler(connection_socket, client_addr))
     
     pool.shutdown(wait=True)
     serverSocket.close()
     sys.exit()  # Terminate the program after 
-    pool.shutdown(wait=True)
+    # pool.shutdown(wait=True)
 
 def main():
     print("Server starting...")
