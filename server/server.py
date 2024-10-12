@@ -33,30 +33,31 @@ def file_exists(file):#, type):
      return os.path.exists(file)
 
 def duplicate_file(connection_socket):
-     connection_socket.send('''\n
-                            The file you are attampting to upload already exists on the server.
-                            Please type and submit:
-                            1 to replace the existing file with the new one,
-                            2 to save this new file under a different name,
-                            3 to append the new file onto the end of the existing one, or
-                            4 to keep the existing file and not upload the new one
-                            \n'''.encode('utf-8'))
-     response = connection_socket.recv(4096)
-     response = response.split()
-     response = [field.decode('utf-8') for field in response]
-     response_command = int(response[0])
+    connection_socket.send('''\n
+    The file you are attampting to upload already exists on the server.
+    Please type and submit:
+    1 to replace the existing file with the new one,
+    2 to save this new file under a different name,
+    3 to append the new file onto the end of the existing one, or
+    4 to keep the existing file and not upload the new one
+    \n'''.encode('utf-8'))
+    response = connection_socket.recv(4096)
+    response = response.split()
+    response = [field.decode('utf-8') for field in response]
+    response_command = int(response[0])
     #  response_new_name = response[1]
-     return response_command #, response_new_name
+    return response_command #, response_new_name
 
 def save_file(file_name, new_data):
     with open(file_name, "w") as f:
-            f.write(new_data)
-            f.close()
+        f.write(new_data)
+        f.close()
     return
 
 def replace_file(new_file, new_data):
     os.remove(new_file)
     save_file(new_file, new_data)
+    print("Existing file replaced.\n")
     return
 
 def save_different_name(different_name, new_data):
@@ -66,12 +67,14 @@ def save_different_name(different_name, new_data):
     else:
         new_name = different_name + date.today().strftime('%Y-%m-%d')
     save_file(new_name, new_data)
+    print("File saved under new name: %s.\n", new_name)
     return
 
 def combine_files(file_to_append, new_data):
     with open(file_to_append, "a") as f:
         f.write(new_data)
         f.close()
+    print("New contents appended to existing file.\n")
     return
 
 def keep_existing():
